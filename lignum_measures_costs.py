@@ -54,6 +54,7 @@ def procesar_entidad(e, mediciones):
         "Tipo": tipo,
         "Capa": capa_completa,
         "Base": capa_base,
+        "Descripción": config.get('texto', 'Sin descripción'),
         "Operación": "+" if es_suma else ("-" if es_resta else " "),
         "Longitud (m)": 0.0,
         "Superficie (m²)": 0.0,
@@ -156,11 +157,13 @@ def main():
                     capa_original = claves_normalizadas[capa_norm]
                     config = capas_medicion[capa_original]
                     precio = float(config['precio_unitario'])
+                    texto = config.get('texto', 'Sin descripción')
 
                     if config['logica'] in ['perimetro_altura', 'areas']:
                         m2 = max(0.0, valores['superficie_m2'])
                         coste = m2 * precio
                         resumen_coste[capa_original] = {
+                            'Descripción': texto,
                             'Cantidad': round(m2, 2),
                             'Unidad': 'm²',
                             'Precio Unitario': f"€ {precio:,.2f}",
@@ -171,6 +174,7 @@ def main():
                         ml = max(0.0, valores['longitud_m'])
                         coste = ml * precio
                         resumen_coste[capa_original] = {
+                            'Descripción': texto,
                             'Cantidad': round(ml, 2),
                             'Unidad': 'ml',
                             'Precio Unitario': f"€ {precio:,.2f}",
@@ -181,6 +185,7 @@ def main():
                         ud = max(0, valores['unidades'])
                         coste = ud * precio
                         resumen_coste[capa_original] = {
+                            'Descripción': texto,
                             'Cantidad': ud,
                             'Unidad': 'ud',
                             'Precio Unitario': f"€ {precio:,.2f}",
@@ -188,10 +193,26 @@ def main():
                         }
 
                 st.subheader("Resumen de Costes")
+                
+                # Mostrar estadísticas del resumen
+                capas_con_costes = len(resumen_coste)
+                capas_total = len(capas_medicion)
+                st.info(f"📊 Se procesaron {capas_con_costes} de {capas_total} capas disponibles ({capas_con_costes/capas_total*100:.1f}%)")
+                
                 df_resumen = pd.DataFrame.from_dict(resumen_coste, orient='index')
                 st.dataframe(df_resumen)
 
-                coste_total = sum(float(item['Coste'].replace('€','').replace(',','').strip()) for item in resumen_coste.values())
+                # Calcular coste total correctamente
+                coste_total = 0.0
+                for item in resumen_coste.values():
+                    coste_str = item['Coste']
+                    # Extraer solo el número del string "€ 1,723.76"
+                    coste_limpio = coste_str.replace('€', '').replace(',', '').strip()
+                    try:
+                        coste_total += float(coste_limpio)
+                    except ValueError as e:
+                        st.error(f"Error convirtiendo coste '{coste_str}': {e}")
+                        coste_total += 0.0
                 st.success(f"💰 COSTE TOTAL ESTIMADO: € {coste_total:,.2f}")
 
                 if detalle_entidades:
@@ -211,6 +232,21 @@ def main():
                     st.subheader("⚠️ Capas ignoradas (no presentes en el diccionario de mediciones)")
                     for capa in sorted(capas_descartadas):
                         st.text(f"- {capa}")
+                
+                # Mostrar capas con precio 0 que no se incluyen en el resumen
+                capas_precio_cero = []
+                for capa, config in capas_medicion.items():
+                    if config.get('precio_unitario', 0) == 0:
+                        capas_precio_cero.append(capa)
+                
+                if capas_precio_cero:
+                    st.subheader("💰 Capas con precio 0.00 (no incluidas en costes)")
+                    st.info(f"Se encontraron {len(capas_precio_cero)} capas con precio 0.00")
+                    # Mostrar solo las primeras 10 para no saturar la interfaz
+                    for capa in sorted(capas_precio_cero)[:10]:
+                        st.text(f"- {capa}")
+                    if len(capas_precio_cero) > 10:
+                        st.text(f"... y {len(capas_precio_cero) - 10} capas más")
 
             except Exception as e:
                 st.error(f"❌ Error crítico al procesar el archivo: {str(e)}")
